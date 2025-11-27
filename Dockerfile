@@ -12,8 +12,8 @@ FROM alpine:latest
 
 WORKDIR /app
 
-COPY --from=builder /app/amazonq2api .
+COPY --from=builder /app/kilocli2api .
 
 EXPOSE 4000
 
-CMD ["./amazonq2api"]
+CMD ["./kilocli2api"]
