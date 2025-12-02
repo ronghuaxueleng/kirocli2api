@@ -2,20 +2,19 @@ package Utils
 
 import (
 	"bytes"
-	"crypto/tls"
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
-	"github.com/google/uuid"
 	"io"
-	"kilocli2api/Models"
 	"math/rand"
 	"net/http"
-	"net/url"
 	"os"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/google/uuid"
+	"kilocli2api/Models"
 )
 
 var initDoOnce = &sync.Once{}
@@ -31,15 +30,7 @@ var nextRefreshTokenIndex int
 var maxRefreshAttempt int
 
 func getProxyTransport() *http.Transport {
-	transport := &http.Transport{
-		TLSNextProto: map[string]func(string, *tls.Conn) http.RoundTripper{},
-	}
-	if proxyURL := os.Getenv("PROXY_URL"); proxyURL != "" {
-		if proxy, err := url.Parse(proxyURL); err == nil {
-			transport.Proxy = http.ProxyURL(proxy)
-		}
-	}
-	return transport
+	return GetProxyTransport()
 }
 
 func loadAccountsFromCSV(csvPath string) {
