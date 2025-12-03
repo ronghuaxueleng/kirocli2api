@@ -56,7 +56,7 @@ func makeUTLSDialer() func(ctx context.Context, network, addr string) (net.Conn,
 			}
 		}
 
-		tlsConn := utls.UClient(netConn, &utls.Config{ServerName: host}, utls.HelloChrome_Auto)
+		tlsConn := utls.UClient(netConn, &utls.Config{ServerName: host, NextProtos: []string{"http/1.1"}}, utls.HelloChrome_Auto)
 		if err := tlsConn.Handshake(); err != nil {
 			netConn.Close()
 			return nil, err
