@@ -56,7 +56,22 @@ func makeUTLSDialer() func(ctx context.Context, network, addr string) (net.Conn,
 			}
 		}
 
-		tlsConn := utls.UClient(netConn, &utls.Config{ServerName: host, NextProtos: []string{"http/1.1"}}, utls.HelloChrome_Auto)
+		spec, err := utls.UTLSIdToSpec(utls.HelloChrome_Auto)
+		if err != nil {
+			netConn.Close()
+			return nil, err
+		}
+		for _, ext := range spec.Extensions {
+			if alpn, ok := ext.(*utls.ALPNExtension); ok {
+				alpn.AlpnProtocols = []string{"http/1.1"}
+				break
+			}
+		}
+		tlsConn := utls.UClient(netConn, &utls.Config{ServerName: host}, utls.HelloCustom)
+		if err := tlsConn.ApplyPreset(&spec); err != nil {
+			netConn.Close()
+			return nil, err
+		}
 		if err := tlsConn.Handshake(); err != nil {
 			netConn.Close()
 			return nil, err
