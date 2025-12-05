@@ -50,7 +50,7 @@ func MapOpenAiToAmazonQ(req Models.ChatCompletionRequest, conversationID string,
 	Output.ConversationState.ConversationID = conversationID
 	Output.ConversationState.ChatTriggerType = "MANUAL"
 	Output.ConversationState.CurrentMessage.UserInputMessage.Origin = "KIRO_CLI"
-	Output.ConversationState.CurrentMessage.UserInputMessage.ModelID = ModelMapping(req.Model)
+	Output.ConversationState.CurrentMessage.UserInputMessage.ModelID = strings.TrimSuffix(req.Model, "-thinking")
 
 	var qEnvState = Models.QEnvState{
 		OperatingSystem:         "macos",
@@ -292,6 +292,11 @@ func MapOpenAiToAmazonQ(req Models.ChatCompletionRequest, conversationID string,
 
 	// Fuck Q api
 	Output.ConversationState.CurrentMessage.UserInputMessage.Content = ensureNonEmptyContent(Output.ConversationState.CurrentMessage.UserInputMessage.Content)
+
+	// Check if it is thinking request
+	if (req.Reasoning != "none" && req.Reasoning != "") || strings.HasSuffix(req.Model, "-thinking") {
+		Output.ConversationState.CurrentMessage.UserInputMessage.Content += "<antml:thinking_mode>interleaved</antml:thinking_mode><antml:max_thinking_length>16000</antml:max_thinking_length>"
+	}
 
 	return Output, nil
 }

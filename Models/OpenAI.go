@@ -10,7 +10,7 @@ type ChatCompletionRequest struct {
 	Stream    bool                   `json:"stream"`
 	Tools     []OpenAiToolDefinition `json:"tools,omitempty"`
 	MaxTokens int                    `json:"max_tokens,omitempty"`
-	Reasoning interface{}            `json:"reasoning"`
+	Reasoning string                 `json:"reasoning_effort"`
 }
 
 type OpenAiMessage struct {
@@ -130,6 +130,7 @@ type SSEChoice struct {
 type Delta struct {
 	Role      string          `json:"role,omitempty"`    // Only present in the first chunk
 	Content   string          `json:"content,omitempty"` // Incremental content
+	Reasoning string          `json:"reasoning_content,omitempty"`
 	ToolCalls []SSEOpenAiTool `json:"tool_calls,omitempty"`
 }
 

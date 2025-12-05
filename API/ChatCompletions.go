@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream"
@@ -249,6 +250,7 @@ func handleStreamingRequest(c *gin.Context, req Models.ChatCompletionRequest) {
 	var toolCallMap = make(map[string]int) // Track tool call indices
 	var nextToolIndex = 0
 	var isToolCalled bool
+	var inThinking bool
 
 	// Continuously decode messages while streaming
 	messageCount := 0
@@ -292,23 +294,92 @@ func handleStreamingRequest(c *gin.Context, req Models.ChatCompletionRequest) {
 
 		// Handle different event types
 		if qMsg.Content != "" {
-			msg := Models.SSEResponse{
-				ID:      id,
-				Object:  object,
-				Created: created,
-				Model:   model,
-				Choices: []Models.SSEChoice{
-					{
-						Index: index,
-						Delta: Models.Delta{
-							Content: qMsg.Content,
-						},
-						FinishReason: nil,
-					},
-				},
+			content := qMsg.Content
+			for len(content) > 0 {
+				if !inThinking {
+					if idx := strings.Index(content, "<thinking>"); idx >= 0 {
+						if idx > 0 {
+							msg := Models.SSEResponse{
+								ID:      id,
+								Object:  object,
+								Created: created,
+								Model:   model,
+								Choices: []Models.SSEChoice{
+									{
+										Index: index,
+										Delta: Models.Delta{
+											Content: content[:idx],
+										},
+										FinishReason: nil,
+									},
+								},
+							}
+							c.SSEvent("", msg)
+						}
+						inThinking = true
+						content = content[idx+10:]
+					} else {
+						msg := Models.SSEResponse{
+							ID:      id,
+							Object:  object,
+							Created: created,
+							Model:   model,
+							Choices: []Models.SSEChoice{
+								{
+									Index: index,
+									Delta: Models.Delta{
+										Content: content,
+									},
+									FinishReason: nil,
+								},
+							},
+						}
+						c.SSEvent("", msg)
+						break
+					}
+				} else {
+					if idx := strings.Index(content, "</thinking>"); idx >= 0 {
+						if idx > 0 {
+							msg := Models.SSEResponse{
+								ID:      id,
+								Object:  object,
+								Created: created,
+								Model:   model,
+								Choices: []Models.SSEChoice{
+									{
+										Index: index,
+										Delta: Models.Delta{
+											Reasoning: content[:idx],
+										},
+										FinishReason: nil,
+									},
+								},
+							}
+							c.SSEvent("", msg)
+						}
+						inThinking = false
+						content = content[idx+11:]
+					} else {
+						msg := Models.SSEResponse{
+							ID:      id,
+							Object:  object,
+							Created: created,
+							Model:   model,
+							Choices: []Models.SSEChoice{
+								{
+									Index: index,
+									Delta: Models.Delta{
+										Reasoning: content,
+									},
+									FinishReason: nil,
+								},
+							},
+						}
+						c.SSEvent("", msg)
+						break
+					}
+				}
 			}
-
-			c.SSEvent("", msg)
 		} else if qMsg.Reason != "" {
 			// InvalidStateEvent
 			c.SSEvent("", gin.H{

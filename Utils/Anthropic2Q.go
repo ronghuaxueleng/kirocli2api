@@ -1,8 +1,10 @@
 package Utils
 
 import (
+	"fmt"
 	"github.com/google/uuid"
 	"kilocli2api/Models"
+	"strings"
 )
 
 // MapAnthropicToAmazonQ converts an Anthropic API request to Amazon Q API format.
@@ -15,7 +17,7 @@ func MapAnthropicToAmazonQ(req Models.AnthropicRequest, conversationID string, c
 	Output.ConversationState.ConversationID = conversationID
 	Output.ConversationState.ChatTriggerType = "MANUAL"
 	Output.ConversationState.CurrentMessage.UserInputMessage.Origin = "KIRO_CLI"
-	Output.ConversationState.CurrentMessage.UserInputMessage.ModelID = ModelMapping(req.Model)
+	Output.ConversationState.CurrentMessage.UserInputMessage.ModelID = strings.TrimSuffix(req.Model, "-thinking")
 
 	var qEnvState = Models.QEnvState{
 		OperatingSystem:         "macos",
@@ -265,6 +267,15 @@ func MapAnthropicToAmazonQ(req Models.AnthropicRequest, conversationID string, c
 
 	// Ensure content is never empty (Q API requirement)
 	Output.ConversationState.CurrentMessage.UserInputMessage.Content = ensureNonEmptyContent(Output.ConversationState.CurrentMessage.UserInputMessage.Content)
+
+	// Check if it is thinking request
+	if req.Thinking.Type == "enabled" || strings.HasSuffix(req.Model, "-thinking") {
+		var budgetToken = req.Thinking.BudgetTokens
+		if budgetToken == 0 {
+			budgetToken = 16000
+		}
+		Output.ConversationState.CurrentMessage.UserInputMessage.Content += fmt.Sprintf("<antml:thinking_mode>interleaved</antml:thinking_mode><antml:max_thinking_length>%d</antml:max_thinking_length>", budgetToken)
+	}
 
 	return Output, nil
 }

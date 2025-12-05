@@ -6,6 +6,7 @@ type AnthropicRequest struct {
 	Model       string             `json:"model" binding:"required"`
 	Messages    []AnthropicMessage `json:"messages" binding:"required"`
 	MaxTokens   int                `json:"max_tokens" binding:"required"`
+	Thinking    AnthropicThinking  `json:"thinking,omitempty"`
 	Stream      bool               `json:"stream,omitempty"`
 	System      AnthropicSystem    `json:"system,omitempty"`
 	Tools       []AnthropicTool    `json:"tools,omitempty"`
@@ -77,6 +78,11 @@ func (amc AnthropicMessageContent) MarshalJSON() ([]byte, error) {
 		return json.Marshal(amc.String)
 	}
 	return json.Marshal(amc.Blocks)
+}
+
+type AnthropicThinking struct {
+	Type         string `json:"type"`
+	BudgetTokens int    `json:"budget_tokens"`
 }
 
 type AnthropicImageSource struct {
@@ -182,16 +188,18 @@ type AnthropicStreamResponse struct {
 }
 
 type AnthropicStreamContentBlock struct {
-	Type  string    `json:"type"`
-	Text  *string   `json:"text,omitempty"`
-	ID    string    `json:"id,omitempty"`
-	Name  string    `json:"name,omitempty"`
-	Input *struct{} `json:"input,omitempty"`
+	Type     string    `json:"type"`
+	Text     *string   `json:"text,omitempty"`
+	Thinking *string   `json:"thinking,omitempty"`
+	ID       string    `json:"id,omitempty"`
+	Name     string    `json:"name,omitempty"`
+	Input    *struct{} `json:"input,omitempty"`
 }
 
 type AnthropicDelta struct {
 	Type         string  `json:"type,omitempty"`
 	Text         string  `json:"text,omitempty"`
+	Thinking     string  `json:"thinking,omitempty"`
 	PartialJson  string  `json:"partial_json,omitempty"`
 	StopReason   string  `json:"stop_reason,omitempty"`
 	StopSequence *string `json:"stop_sequence"`

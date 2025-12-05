@@ -275,12 +275,15 @@ func handleAnthropicStreamingRequest(c *gin.Context, req Models.AnthropicRequest
 	messageCount := 0
 	blockIndex := -1
 	activeTextIndex := -1
+	activeThinkingIndex := -1
 	toolBlockIndices := make(map[string]int)
 	toolOrder := make([]string, 0)
 	hasToolUse := false
 	inputTokens := estimateInputTokens(req)
 	var textBuffer strings.Builder
+	var thinkingBuffer strings.Builder
 	toolInputBuffers := make(map[string]*strings.Builder)
+	inThinking := false
 
 	indexPtr := func(v int) *int {
 		i := v
@@ -291,6 +294,14 @@ func handleAnthropicStreamingRequest(c *gin.Context, req Models.AnthropicRequest
 		if activeTextIndex >= 0 {
 			c.SSEvent("content_block_stop", Models.AnthropicStreamResponse{Type: "content_block_stop", Index: indexPtr(activeTextIndex)})
 			activeTextIndex = -1
+		}
+	}
+
+	closeThinkingBlock := func() {
+		if activeThinkingIndex >= 0 {
+			c.SSEvent("content_block_stop", Models.AnthropicStreamResponse{Type: "content_block_stop", Index: indexPtr(activeThinkingIndex)})
+			activeThinkingIndex = -1
+			inThinking = false
 		}
 	}
 
@@ -350,34 +361,109 @@ func handleAnthropicStreamingRequest(c *gin.Context, req Models.AnthropicRequest
 
 		switch {
 		case qMsg.Content != "":
-			if activeTextIndex == -1 {
-				blockIndex++
-				activeTextIndex = blockIndex
-				emptyText := ""
-				c.SSEvent("content_block_start", Models.AnthropicStreamResponse{
-					Type:  "content_block_start",
-					Index: indexPtr(activeTextIndex),
-					ContentBlock: &Models.AnthropicStreamContentBlock{
-						Type: "text",
-						Text: &emptyText,
-					},
-				})
+			content := qMsg.Content
+			for len(content) > 0 {
+				if !inThinking {
+					if idx := strings.Index(content, "<thinking>"); idx >= 0 {
+						if idx > 0 {
+							if activeTextIndex == -1 {
+								blockIndex++
+								activeTextIndex = blockIndex
+								emptyText := ""
+								c.SSEvent("content_block_start", Models.AnthropicStreamResponse{
+									Type:  "content_block_start",
+									Index: indexPtr(activeTextIndex),
+									ContentBlock: &Models.AnthropicStreamContentBlock{
+										Type: "text",
+										Text: &emptyText,
+									},
+								})
+							}
+							textBuffer.WriteString(content[:idx])
+							c.SSEvent("content_block_delta", Models.AnthropicStreamResponse{
+								Type:  "content_block_delta",
+								Index: indexPtr(activeTextIndex),
+								Delta: &Models.AnthropicDelta{
+									Type: "text_delta",
+									Text: content[:idx],
+								},
+							})
+						} else {
+							closeTextBlock()
+						}
+						blockIndex++
+						activeThinkingIndex = blockIndex
+						inThinking = true
+						emptyThinking := ""
+						c.SSEvent("content_block_start", Models.AnthropicStreamResponse{
+							Type:  "content_block_start",
+							Index: indexPtr(activeThinkingIndex),
+							ContentBlock: &Models.AnthropicStreamContentBlock{
+								Type:     "thinking",
+								Thinking: &emptyThinking,
+							},
+						})
+						content = content[idx+10:]
+					} else {
+						if activeTextIndex == -1 {
+							blockIndex++
+							activeTextIndex = blockIndex
+							emptyText := ""
+							c.SSEvent("content_block_start", Models.AnthropicStreamResponse{
+								Type:  "content_block_start",
+								Index: indexPtr(activeTextIndex),
+								ContentBlock: &Models.AnthropicStreamContentBlock{
+									Type: "text",
+									Text: &emptyText,
+								},
+							})
+						}
+						textBuffer.WriteString(content)
+						c.SSEvent("content_block_delta", Models.AnthropicStreamResponse{
+							Type:  "content_block_delta",
+							Index: indexPtr(activeTextIndex),
+							Delta: &Models.AnthropicDelta{
+								Type: "text_delta",
+								Text: content,
+							},
+						})
+						break
+					}
+				} else {
+					if idx := strings.Index(content, "</thinking>"); idx >= 0 {
+						if idx > 0 {
+							thinkingBuffer.WriteString(content[:idx])
+							c.SSEvent("content_block_delta", Models.AnthropicStreamResponse{
+								Type:  "content_block_delta",
+								Index: indexPtr(activeThinkingIndex),
+								Delta: &Models.AnthropicDelta{
+									Type:     "thinking_delta",
+									Thinking: content[:idx],
+								},
+							})
+						}
+						closeThinkingBlock()
+						content = content[idx+11:]
+					} else {
+						thinkingBuffer.WriteString(content)
+						c.SSEvent("content_block_delta", Models.AnthropicStreamResponse{
+							Type:  "content_block_delta",
+							Index: indexPtr(activeThinkingIndex),
+							Delta: &Models.AnthropicDelta{
+								Type:     "thinking_delta",
+								Thinking: content,
+							},
+						})
+						break
+					}
+				}
 			}
-			textBuffer.WriteString(qMsg.Content)
-			c.SSEvent("content_block_delta", Models.AnthropicStreamResponse{
-				Type:  "content_block_delta",
-				Index: indexPtr(activeTextIndex),
-				Delta: &Models.AnthropicDelta{
-					Type: "text_delta",
-					Text: qMsg.Content,
-				},
-			})
-			// fmt.Println("Content:", qMsg.Content)
 		case qMsg.ToolUseId != "":
 			hasToolUse = true
 			idx, exists := toolBlockIndices[qMsg.ToolUseId]
 			if !exists {
 				closeTextBlock()
+				closeThinkingBlock()
 				blockIndex++
 				idx = blockIndex
 				toolBlockIndices[qMsg.ToolUseId] = idx
@@ -421,6 +507,7 @@ func handleAnthropicStreamingRequest(c *gin.Context, req Models.AnthropicRequest
 			}
 		case qMsg.Reason != "":
 			closeTextBlock()
+			closeThinkingBlock()
 			for _, toolID := range toolOrder {
 				closeToolBlock(toolID)
 			}
@@ -430,7 +517,7 @@ func handleAnthropicStreamingRequest(c *gin.Context, req Models.AnthropicRequest
 					allToolInputs.WriteString(buf.String())
 				}
 			}
-			outputTokens := countTokens(textBuffer.String() + allToolInputs.String())
+			outputTokens := countTokens(textBuffer.String() + thinkingBuffer.String() + allToolInputs.String())
 			c.SSEvent("message_delta", Models.AnthropicStreamResponse{
 				Type:  "message_delta",
 				Delta: &Models.AnthropicDelta{StopReason: "error", StopSequence: nil},
@@ -444,6 +531,7 @@ func handleAnthropicStreamingRequest(c *gin.Context, req Models.AnthropicRequest
 	}
 
 	closeTextBlock()
+	closeThinkingBlock()
 	for _, toolID := range toolOrder {
 		closeToolBlock(toolID)
 	}
@@ -459,7 +547,7 @@ func handleAnthropicStreamingRequest(c *gin.Context, req Models.AnthropicRequest
 			allToolInputs.WriteString(buf.String())
 		}
 	}
-	outputTokens := countTokens(textBuffer.String() + allToolInputs.String())
+	outputTokens := countTokens(textBuffer.String() + thinkingBuffer.String() + allToolInputs.String())
 
 	c.SSEvent("message_delta", Models.AnthropicStreamResponse{
 		Type:  "message_delta",
