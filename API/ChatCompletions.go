@@ -124,13 +124,15 @@ func handleNonStreamingRequest(c *gin.Context, req Models.ChatCompletionRequest)
 			finishReason = "tool_calls"
 		}
 
+		textContent, reasoningContent := extractThinking(fullContent)
 		message := Models.OpenAiMessage{
 			Role: "assistant",
 			Content: Models.MessageContent{
 				IsString: true,
-				String:   fullContent,
+				String:   textContent,
 			},
-			ToolCalls: toolCalls,
+			ReasoningContent: reasoningContent,
+			ToolCalls:        toolCalls,
 		}
 
 		response := Models.ChatCompletionResponse{
@@ -457,4 +459,27 @@ func handleStreamingRequest(c *gin.Context, req Models.ChatCompletionRequest) {
 
 	c.SSEvent("", msg)
 	c.SSEvent("", "[DONE]")
+}
+
+func extractThinking(content string) (text string, reasoning string) {
+	var textParts, reasoningParts []string
+	for len(content) > 0 {
+		if thinkingStart := strings.Index(content, "<thinking>"); thinkingStart >= 0 {
+			if thinkingStart > 0 {
+				textParts = append(textParts, content[:thinkingStart])
+			}
+			content = content[thinkingStart+10:]
+			if thinkingEnd := strings.Index(content, "</thinking>"); thinkingEnd >= 0 {
+				reasoningParts = append(reasoningParts, content[:thinkingEnd])
+				content = content[thinkingEnd+11:]
+			} else {
+				reasoningParts = append(reasoningParts, content)
+				break
+			}
+		} else {
+			textParts = append(textParts, content)
+			break
+		}
+	}
+	return strings.Join(textParts, ""), strings.Join(reasoningParts, "")
 }

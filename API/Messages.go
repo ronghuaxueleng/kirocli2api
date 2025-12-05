@@ -558,10 +558,29 @@ func handleAnthropicStreamingRequest(c *gin.Context, req Models.AnthropicRequest
 }
 
 func openAIToAnthropicContent(content string, toolCalls []Models.OpenAiTool) []Models.AnthropicContentBlock {
-	blocks := make([]Models.AnthropicContentBlock, 0, len(toolCalls)+1)
-	if strings.TrimSpace(content) != "" {
-		blocks = append(blocks, Models.AnthropicContentBlock{Type: "text", Text: content})
+	blocks := make([]Models.AnthropicContentBlock, 0, len(toolCalls)+2)
+
+	for len(content) > 0 {
+		if thinkingStart := strings.Index(content, "<thinking>"); thinkingStart >= 0 {
+			if thinkingStart > 0 && strings.TrimSpace(content[:thinkingStart]) != "" {
+				blocks = append(blocks, Models.AnthropicContentBlock{Type: "text", Text: content[:thinkingStart]})
+			}
+			content = content[thinkingStart+10:]
+			if thinkingEnd := strings.Index(content, "</thinking>"); thinkingEnd >= 0 {
+				blocks = append(blocks, Models.AnthropicContentBlock{Type: "thinking", Thinking: content[:thinkingEnd]})
+				content = content[thinkingEnd+11:]
+			} else {
+				blocks = append(blocks, Models.AnthropicContentBlock{Type: "thinking", Thinking: content})
+				break
+			}
+		} else {
+			if strings.TrimSpace(content) != "" {
+				blocks = append(blocks, Models.AnthropicContentBlock{Type: "text", Text: content})
+			}
+			break
+		}
 	}
+
 	for _, tc := range toolCalls {
 		blocks = append(blocks, Models.AnthropicContentBlock{
 			Type:  "tool_use",

@@ -14,10 +14,11 @@ type ChatCompletionRequest struct {
 }
 
 type OpenAiMessage struct {
-	Role       string         `json:"role" binding:"required"`
-	Content    MessageContent `json:"content"`
-	ToolCalls  []OpenAiTool   `json:"tool_calls,omitempty"`
-	ToolCallID string         `json:"tool_call_id,omitempty"`
+	Role             string         `json:"role" binding:"required"`
+	Content          MessageContent `json:"content"`
+	ReasoningContent string         `json:"reasoning_content,omitempty"`
+	ToolCalls        []OpenAiTool   `json:"tool_calls,omitempty"`
+	ToolCallID       string         `json:"tool_call_id,omitempty"`
 }
 
 // MessageContent can be either a string or []OpenAiContent
