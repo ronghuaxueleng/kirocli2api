@@ -69,27 +69,37 @@ func fetchQModels() (*Models.QModelsResponse, error) {
 }
 
 func handleOpenAIModels(c *gin.Context, qModels *Models.QModelsResponse) {
-	data := make([]Models.OpenAIModel, len(qModels.Models))
-	for i, m := range qModels.Models {
-		data[i] = Models.OpenAIModel{
+	data := make([]Models.OpenAIModel, 0, len(qModels.Models)*2)
+	for _, m := range qModels.Models {
+		data = append(data, Models.OpenAIModel{
 			ID:      m.ModelID,
 			Object:  "model",
 			Created: 1145141919,
 			OwnedBy: "anthropic",
-		}
+		}, Models.OpenAIModel{
+			ID:      m.ModelID + "-thinking",
+			Object:  "model",
+			Created: 1145141919,
+			OwnedBy: "anthropic",
+		})
 	}
 	c.JSON(http.StatusOK, Models.OpenAIModelsResponse{Object: "list", Data: data})
 }
 
 func handleAnthropicModels(c *gin.Context, qModels *Models.QModelsResponse) {
-	data := make([]Models.AnthropicModel, len(qModels.Models))
-	for i, m := range qModels.Models {
-		data[i] = Models.AnthropicModel{
+	data := make([]Models.AnthropicModel, 0, len(qModels.Models)*2)
+	for _, m := range qModels.Models {
+		data = append(data, Models.AnthropicModel{
 			ID:          m.ModelID,
 			Type:        "model",
 			DisplayName: m.ModelName,
 			CreatedAt:   "2006-04-16T06:58:39Z",
-		}
+		}, Models.AnthropicModel{
+			ID:          m.ModelID + "-thinking",
+			Type:        "model",
+			DisplayName: m.ModelName + " (Thinking)",
+			CreatedAt:   "2006-04-16T06:58:39Z",
+		})
 	}
 	firstID := ""
 	lastID := ""

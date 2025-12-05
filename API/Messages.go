@@ -27,6 +27,8 @@ func countTokens(text string) int {
 	if text == "" {
 		return 0
 	}
+	text = strings.ReplaceAll(text, "<thinking>", "")
+	text = strings.ReplaceAll(text, "</thinking>", "")
 	if cl100kEncoder == nil {
 		return len(text) / 4
 	}

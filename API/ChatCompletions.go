@@ -135,6 +135,8 @@ func handleNonStreamingRequest(c *gin.Context, req Models.ChatCompletionRequest)
 			ToolCalls:        toolCalls,
 		}
 
+		promptTokens := estimateOpenAIInputTokens(req)
+		completionTokens := countTokens(fullContent)
 		response := Models.ChatCompletionResponse{
 			ID:      "chatcmpl-" + uuid.NewString(),
 			Object:  "chat.completion",
@@ -148,9 +150,9 @@ func handleNonStreamingRequest(c *gin.Context, req Models.ChatCompletionRequest)
 				},
 			},
 			Usage: Models.Usage{
-				PromptTokens:     0,
-				CompletionTokens: 0,
-				TotalTokens:      0,
+				PromptTokens:     promptTokens,
+				CompletionTokens: completionTokens,
+				TotalTokens:      promptTokens + completionTokens,
 			},
 		}
 
@@ -482,4 +484,15 @@ func extractThinking(content string) (text string, reasoning string) {
 		}
 	}
 	return strings.Join(textParts, ""), strings.Join(reasoningParts, "")
+}
+
+func estimateOpenAIInputTokens(req Models.ChatCompletionRequest) int {
+	var parts []string
+	for _, msg := range req.Messages {
+		parts = append(parts, msg.Content.GetString())
+	}
+	for _, tool := range req.Tools {
+		parts = append(parts, tool.Function.Name, tool.Function.Description)
+	}
+	return countTokens(strings.Join(parts, "\n"))
 }
