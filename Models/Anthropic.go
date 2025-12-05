@@ -173,12 +173,20 @@ type AnthropicUsage struct {
 }
 
 type AnthropicStreamResponse struct {
-	Type         string                 `json:"type"`
-	Index        *int                   `json:"index,omitempty"`
-	Delta        *AnthropicDelta        `json:"delta,omitempty"`
-	Message      *AnthropicResponse     `json:"message,omitempty"`
-	ContentBlock *AnthropicContentBlock `json:"content_block,omitempty"`
-	Usage        *AnthropicUsage        `json:"usage,omitempty"`
+	Type         string                       `json:"type"`
+	Index        *int                         `json:"index,omitempty"`
+	Delta        *AnthropicDelta              `json:"delta,omitempty"`
+	Message      *AnthropicResponse           `json:"message,omitempty"`
+	ContentBlock *AnthropicStreamContentBlock `json:"content_block,omitempty"`
+	Usage        *AnthropicUsage              `json:"usage,omitempty"`
+}
+
+type AnthropicStreamContentBlock struct {
+	Type  string    `json:"type"`
+	Text  *string   `json:"text,omitempty"`
+	ID    string    `json:"id,omitempty"`
+	Name  string    `json:"name,omitempty"`
+	Input *struct{} `json:"input,omitempty"`
 }
 
 type AnthropicDelta struct {

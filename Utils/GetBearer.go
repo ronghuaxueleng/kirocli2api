@@ -25,6 +25,7 @@ var tokenMutex sync.RWMutex
 var csvMutex sync.Mutex
 var tokenIndex int
 var csvPath string
+var apiAccountsPath = "resources/api_accounts.json"
 var activeTokenCount int
 var nextRefreshTokenIndex int
 var maxRefreshAttempt int
@@ -85,7 +86,64 @@ type APIAccount struct {
 	ClientSecret string `json:"client_secret"`
 }
 
+func saveAPIAccountsToJSON(accounts []APIAccount) {
+	data, err := json.MarshalIndent(accounts, "", "  ")
+	if err != nil {
+		NormalLogger.Printf("Failed to marshal accounts to JSON: %v\n", err)
+		return
+	}
+	if err := os.WriteFile(apiAccountsPath, data, 0644); err != nil {
+		NormalLogger.Printf("Failed to save accounts to JSON: %v\n", err)
+	}
+}
+
+func loadAPIAccountsFromJSON() ([]APIAccount, error) {
+	data, err := os.ReadFile(apiAccountsPath)
+	if err != nil {
+		return nil, err
+	}
+	var accounts []APIAccount
+	if err := json.Unmarshal(data, &accounts); err != nil {
+		return nil, err
+	}
+	return accounts, nil
+}
+
+func removeAccountFromJSON(refreshToken string) {
+	csvMutex.Lock()
+	defer csvMutex.Unlock()
+
+	accounts, err := loadAPIAccountsFromJSON()
+	if err != nil {
+		return
+	}
+	for i, acc := range accounts {
+		if acc.RefreshToken == refreshToken {
+			accounts = append(accounts[:i], accounts[i+1:]...)
+			saveAPIAccountsToJSON(accounts)
+			return
+		}
+	}
+}
+
 func loadAccountsFromAPI(apiURL, apiToken string, count int) {
+	// Try loading from cache first
+	if len(RefreshTokens) == 0 {
+		if cached, err := loadAPIAccountsFromJSON(); err == nil && len(cached) > 0 {
+			NormalLogger.Printf("Loaded %d accounts from cache\n", len(cached))
+			for _, acc := range cached {
+				RefreshTokens = append(RefreshTokens, Models.RefreshToken{
+					Token:        acc.RefreshToken,
+					ClientId:     acc.ClientID,
+					ClientSecret: strings.ReplaceAll(acc.ClientSecret, "\r", ""),
+				})
+			}
+			if len(RefreshTokens) >= count {
+				return
+			}
+		}
+	}
+
 	url := fmt.Sprintf("%s?count=%d", apiURL, count)
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
@@ -122,6 +180,17 @@ func loadAccountsFromAPI(apiURL, apiToken string, count int) {
 			ClientSecret: strings.ReplaceAll(acc.ClientSecret, "\r", ""),
 		})
 	}
+
+	// Save all accounts to cache
+	var allAccounts []APIAccount
+	for _, rt := range RefreshTokens {
+		allAccounts = append(allAccounts, APIAccount{
+			RefreshToken: rt.Token,
+			ClientID:     rt.ClientId,
+			ClientSecret: rt.ClientSecret,
+		})
+	}
+	saveAPIAccountsToJSON(allAccounts)
 
 	if len(RefreshTokens) == 0 {
 		panic("No accounts received from API")
@@ -193,33 +262,34 @@ func fetchAndAddNewToken() {
 }
 
 func updateCSVEnabled(refreshToken string) {
-	if csvPath == "" {
-		return
-	}
-	go func() {
-		csvMutex.Lock()
-		defer csvMutex.Unlock()
+	if csvPath != "" {
+		go func() {
+			csvMutex.Lock()
+			defer csvMutex.Unlock()
 
-		file, err := os.ReadFile(csvPath)
-		if err != nil {
-			NormalLogger.Printf("Failed to read CSV: %v\n", err)
-			return
-		}
+			file, err := os.ReadFile(csvPath)
+			if err != nil {
+				NormalLogger.Printf("Failed to read CSV: %v\n", err)
+				return
+			}
 
-		lines := strings.Split(string(file), "\n")
-		for i := 1; i < len(lines); i++ {
-			if strings.Contains(lines[i], refreshToken) {
-				parts := strings.Split(lines[i], ",")
-				if len(parts) >= 4 && strings.TrimSpace(parts[1]) == refreshToken {
-					parts[0] = "False"
-					lines[i] = strings.Join(parts, ",")
-					break
+			lines := strings.Split(string(file), "\n")
+			for i := 1; i < len(lines); i++ {
+				if strings.Contains(lines[i], refreshToken) {
+					parts := strings.Split(lines[i], ",")
+					if len(parts) >= 4 && strings.TrimSpace(parts[1]) == refreshToken {
+						parts[0] = "False"
+						lines[i] = strings.Join(parts, ",")
+						break
+					}
 				}
 			}
-		}
 
-		_ = os.WriteFile(csvPath, []byte(strings.Join(lines, "\n")), 0644)
-	}()
+			_ = os.WriteFile(csvPath, []byte(strings.Join(lines, "\n")), 0644)
+		}()
+	} else {
+		go removeAccountFromJSON(refreshToken)
+	}
 }
 
 func GetBearer() (string, error) {

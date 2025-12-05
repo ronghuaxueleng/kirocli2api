@@ -3,7 +3,6 @@ package API
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -259,7 +258,7 @@ func handleStreamingRequest(c *gin.Context, req Models.ChatCompletionRequest) {
 			if err == io.EOF {
 				break
 			}
-			fmt.Printf("Decode error: %v\n", err)
+			// fmt.Printf("Decode error: %v\n", err)
 			return
 		}
 

@@ -353,12 +353,13 @@ func handleAnthropicStreamingRequest(c *gin.Context, req Models.AnthropicRequest
 			if activeTextIndex == -1 {
 				blockIndex++
 				activeTextIndex = blockIndex
+				emptyText := ""
 				c.SSEvent("content_block_start", Models.AnthropicStreamResponse{
 					Type:  "content_block_start",
 					Index: indexPtr(activeTextIndex),
-					ContentBlock: &Models.AnthropicContentBlock{
+					ContentBlock: &Models.AnthropicStreamContentBlock{
 						Type: "text",
-						Text: "",
+						Text: &emptyText,
 					},
 				})
 			}
@@ -371,6 +372,7 @@ func handleAnthropicStreamingRequest(c *gin.Context, req Models.AnthropicRequest
 					Text: qMsg.Content,
 				},
 			})
+			// fmt.Println("Content:", qMsg.Content)
 		case qMsg.ToolUseId != "":
 			hasToolUse = true
 			idx, exists := toolBlockIndices[qMsg.ToolUseId]
@@ -388,10 +390,11 @@ func handleAnthropicStreamingRequest(c *gin.Context, req Models.AnthropicRequest
 				c.SSEvent("content_block_start", Models.AnthropicStreamResponse{
 					Type:  "content_block_start",
 					Index: indexPtr(idx),
-					ContentBlock: &Models.AnthropicContentBlock{
-						Type: "tool_use",
-						ID:   qMsg.ToolUseId,
-						Name: name,
+					ContentBlock: &Models.AnthropicStreamContentBlock{
+						Type:  "tool_use",
+						ID:    qMsg.ToolUseId,
+						Name:  name,
+						Input: &struct{}{},
 					},
 				})
 			} else if qMsg.Name != "" {

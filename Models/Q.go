@@ -13,6 +13,7 @@ type QConversationState struct {
 	History         []QHistoryItem  `json:"history,omitempty"`
 	CurrentMessage  QCurrentMessage `json:"currentMessage"`
 	ChatTriggerType string          `json:"chatTriggerType"`
+	AgentTaskType   string          `json:"agentTaskType,omitempty"`
 }
 
 // QHistoryItem represents a single entry in the conversation history,

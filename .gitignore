@@ -142,3 +142,4 @@ go.work.sum
 .env
 
 resources/
+resources/*

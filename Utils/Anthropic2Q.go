@@ -1,7 +1,6 @@
 package Utils
 
 import (
-	"encoding/json"
 	"github.com/google/uuid"
 	"kilocli2api/Models"
 )
@@ -268,19 +267,4 @@ func MapAnthropicToAmazonQ(req Models.AnthropicRequest, conversationID string, c
 	Output.ConversationState.CurrentMessage.UserInputMessage.Content = ensureNonEmptyContent(Output.ConversationState.CurrentMessage.UserInputMessage.Content)
 
 	return Output, nil
-}
-
-func isValidJSON(data interface{}) bool {
-	var jsonBytes []byte
-
-	switch v := data.(type) {
-	case string:
-		jsonBytes = []byte(v)
-	case []byte:
-		jsonBytes = v
-	default:
-		return false
-	}
-
-	return json.Valid(jsonBytes)
 }
