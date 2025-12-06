@@ -6,6 +6,7 @@ type AccessToken struct {
 }
 
 type RefreshToken struct {
+	ID           int
 	Token        string
 	ClientId     string
 	ClientSecret string

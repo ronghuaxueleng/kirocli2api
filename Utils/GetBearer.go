@@ -86,6 +86,17 @@ type APIAccount struct {
 	ClientSecret string `json:"client_secret"`
 }
 
+type APIAccountResponse struct {
+	ID   int    `json:"id"`
+	Data string `json:"data"`
+}
+
+type APIAccountData struct {
+	RefreshToken string `json:"refresh_token"`
+	ClientID     string `json:"client_id"`
+	ClientSecret string `json:"client_secret"`
+}
+
 func saveAPIAccountsToJSON(accounts []APIAccount) {
 	data, err := json.MarshalIndent(accounts, "", "  ")
 	if err != nil {
@@ -126,6 +137,28 @@ func removeAccountFromJSON(refreshToken string) {
 	}
 }
 
+func banAccountViaAPI(accountID int) {
+	apiURL := os.Getenv("ACCOUNT_API_URL")
+	apiToken := os.Getenv("ACCOUNT_API_TOKEN")
+	if apiURL == "" || apiToken == "" {
+		return
+	}
+
+	reqBody, _ := json.Marshal(map[string]interface{}{"ids": []int{accountID}, "banned": true})
+	req, _ := http.NewRequest("PUT", apiURL+"/update", bytes.NewBuffer(reqBody))
+	req.Header.Set("X-Passkey", apiToken)
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Transport: getProxyTransport(), Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		NormalLogger.Printf("Failed to ban account %d: %v\n", accountID, err)
+		return
+	}
+	defer resp.Body.Close()
+	NormalLogger.Printf("Banned account %d via API\n", accountID)
+}
+
 func loadAccountsFromAPI(apiURL, apiToken string, count int) {
 	// Try loading from cache first
 	if len(RefreshTokens) == 0 {
@@ -133,6 +166,7 @@ func loadAccountsFromAPI(apiURL, apiToken string, count int) {
 			NormalLogger.Printf("Loaded %d accounts from cache\n", len(cached))
 			for _, acc := range cached {
 				RefreshTokens = append(RefreshTokens, Models.RefreshToken{
+					ID:           acc.ID,
 					Token:        acc.RefreshToken,
 					ClientId:     acc.ClientID,
 					ClientSecret: strings.ReplaceAll(acc.ClientSecret, "\r", ""),
@@ -144,19 +178,21 @@ func loadAccountsFromAPI(apiURL, apiToken string, count int) {
 		}
 	}
 
-	url := fmt.Sprintf("%s?count=%d", apiURL, count)
-	req, err := http.NewRequest("GET", url, nil)
+	categoryID := 3
+	if catStr := os.Getenv("ACCOUNT_CATEGORY_ID"); catStr != "" {
+		fmt.Sscanf(catStr, "%d", &categoryID)
+	}
+
+	reqBody, _ := json.Marshal(map[string]int{"category_id": categoryID, "count": count})
+	req, err := http.NewRequest("POST", apiURL+"/fetch", bytes.NewBuffer(reqBody))
 	if err != nil {
 		panic(fmt.Sprintf("Failed to create API request: %v", err))
 	}
 
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", apiToken))
+	req.Header.Set("X-Passkey", apiToken)
+	req.Header.Set("Content-Type", "application/json")
 
-	client := &http.Client{
-		Transport: getProxyTransport(),
-		Timeout:   30 * time.Second,
-	}
-
+	client := &http.Client{Transport: getProxyTransport(), Timeout: 30 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
 		panic(fmt.Sprintf("Failed to fetch accounts from API: %v", err))
@@ -168,16 +204,22 @@ func loadAccountsFromAPI(apiURL, apiToken string, count int) {
 		panic(fmt.Sprintf("API returned status %d: %s", resp.StatusCode, string(body)))
 	}
 
-	var accounts []APIAccount
+	var accounts []APIAccountResponse
 	if err := json.NewDecoder(resp.Body).Decode(&accounts); err != nil {
 		panic(fmt.Sprintf("Failed to parse API response: %v", err))
 	}
 
 	for _, acc := range accounts {
+		var data APIAccountData
+		if err := json.Unmarshal([]byte(acc.Data), &data); err != nil {
+			NormalLogger.Printf("Failed to parse account data: %v\n", err)
+			continue
+		}
 		RefreshTokens = append(RefreshTokens, Models.RefreshToken{
-			Token:        acc.RefreshToken,
-			ClientId:     acc.ClientID,
-			ClientSecret: strings.ReplaceAll(acc.ClientSecret, "\r", ""),
+			ID:           acc.ID,
+			Token:        data.RefreshToken,
+			ClientId:     data.ClientID,
+			ClientSecret: strings.ReplaceAll(data.ClientSecret, "\r", ""),
 		})
 	}
 
@@ -185,6 +227,7 @@ func loadAccountsFromAPI(apiURL, apiToken string, count int) {
 	var allAccounts []APIAccount
 	for _, rt := range RefreshTokens {
 		allAccounts = append(allAccounts, APIAccount{
+			ID:           rt.ID,
 			RefreshToken: rt.Token,
 			ClientID:     rt.ClientId,
 			ClientSecret: rt.ClientSecret,
@@ -288,7 +331,16 @@ func updateCSVEnabled(refreshToken string) {
 			_ = os.WriteFile(csvPath, []byte(strings.Join(lines, "\n")), 0644)
 		}()
 	} else {
-		go removeAccountFromJSON(refreshToken)
+		go func() {
+			removeAccountFromJSON(refreshToken)
+			// Find account ID and ban via API
+			for _, rt := range RefreshTokens {
+				if rt.Token == refreshToken && rt.ID > 0 {
+					banAccountViaAPI(rt.ID)
+					break
+				}
+			}
+		}()
 	}
 }
 
