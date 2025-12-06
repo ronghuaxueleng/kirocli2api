@@ -184,7 +184,7 @@ func loadAccountsFromAPI(apiURL, apiToken string, count int) {
 	}
 
 	reqBody, _ := json.Marshal(map[string]int{"category_id": categoryID, "count": count})
-	req, err := http.NewRequest("POST", apiURL+"/fetch", bytes.NewBuffer(reqBody))
+	req, err := http.NewRequest("POST", apiURL+"/api/accounts/fetch", bytes.NewBuffer(reqBody))
 	if err != nil {
 		panic(fmt.Sprintf("Failed to create API request: %v", err))
 	}
