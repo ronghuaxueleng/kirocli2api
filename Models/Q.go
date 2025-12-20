@@ -37,8 +37,8 @@ type QUserInputMessage struct {
 	Content                 string                   `json:"content"`
 	UserInputMessageContext QUserInputMessageContext `json:"userInputMessageContext"`
 	Origin                  string                   `json:"origin"`
-	//QImage                   QImage                   `json:"image,omitempty"`
-	ModelID string `json:"modelId"`
+	QImage                  []QImage                 `json:"images,omitempty"`
+	ModelID                 string                   `json:"modelId"`
 }
 
 // QUserInputMessageHistory contains the details of a user's message. It's for history
@@ -46,7 +46,7 @@ type QUserInputMessageHistory struct {
 	Content                 string                   `json:"content"`
 	UserInputMessageContext QUserInputMessageContext `json:"userInputMessageContext"`
 	Origin                  string                   `json:"origin"`
-	//QImage                   QImage                   `json:"image,omitempty"`
+	QImage                  []QImage                 `json:"images,omitempty"`
 }
 
 // QAssistantResponseMessage contains the details of the assistant's response.

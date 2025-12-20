@@ -84,9 +84,14 @@ func (mc MessageContent) GetBytes() []byte {
 }
 
 type OpenAiContent struct {
-	Type         string      `json:"type"`
-	Text         string      `json:"text"`
-	CacheControl interface{} `json:"cache_control,omitempty"`
+	Type         string         `json:"type"`
+	Text         string         `json:"text,omitempty"`
+	ImageUrl     OpenAiImageUrl `json:"image_url,omitempty"`
+	CacheControl interface{}    `json:"cache_control,omitempty"`
+}
+
+type OpenAiImageUrl struct {
+	Url string `json:"url"`
 }
 
 type ChatCompletionResponse struct {

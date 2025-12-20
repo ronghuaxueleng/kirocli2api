@@ -180,9 +180,20 @@ func MapAnthropicToAmazonQ(req Models.AnthropicRequest, conversationID string, c
 						}
 
 						toolResults = append(toolResults, qToolResultItem)
+					case "image":
+						if singleBlockMsg.Source.Type == "base64" {
+							qImage := Models.QImage{
+								Format: getExtension(singleBlockMsg.Source.MediaType),
+								Source: Models.QImageSource{
+									Bytes: singleBlockMsg.Source.Data,
+								},
+							}
+							qHistoryItem.UserInputMessage.QImage = append(qHistoryItem.UserInputMessage.QImage, qImage)
+						}
+
 					default:
 						if singleBlockMsg.Text != "" {
-							qHistoryItem.AssistantResponseMessage.Content += ensureNonEmptyContent(singleBlockMsg.Text)
+							qHistoryItem.UserInputMessage.Content += ensureNonEmptyContent(singleBlockMsg.Text)
 						}
 					}
 				}
@@ -254,6 +265,11 @@ func MapAnthropicToAmazonQ(req Models.AnthropicRequest, conversationID string, c
 		Output.ConversationState.CurrentMessage.UserInputMessage.Content = longToolDocs + lastHistoryItem.UserInputMessage.Content
 		Output.ConversationState.CurrentMessage.UserInputMessage.UserInputMessageContext.ToolResults = lastHistoryItem.UserInputMessage.UserInputMessageContext.ToolResults
 		Output.ConversationState.CurrentMessage.UserInputMessage.UserInputMessageContext.EnvState = qEnvState
+
+		// process image
+		if len(lastHistoryItem.UserInputMessage.QImage) > 0 {
+			Output.ConversationState.CurrentMessage.UserInputMessage.QImage = lastHistoryItem.UserInputMessage.QImage
+		}
 
 		qHistories = qHistories[:len(qHistories)-1]
 	} else if lastHistoryItem.AssistantResponseMessage != nil { // last item is assistant message

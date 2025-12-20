@@ -103,8 +103,21 @@ func MapOpenAiToAmazonQ(req Models.ChatCompletionRequest, conversationID string,
 
 			content := ensureNonEmptyContent(msg.Content.GetString())
 
+			var qImages []Models.QImage
+			for _, block := range msg.Content.Contents {
+				if block.Type == "image_url" {
+					qImages = append(qImages, Models.QImage{
+						Format: getExtensionFromBase64Data(block.ImageUrl.Url),
+						Source: Models.QImageSource{
+							Bytes: removeBase64Header(block.ImageUrl.Url),
+						},
+					})
+				}
+			}
+
 			QHistoryItem.UserInputMessage = &Models.QUserInputMessageHistory{
 				Content: content,
+				QImage:  qImages,
 				UserInputMessageContext: Models.QUserInputMessageContext{
 					EnvState: qEnvState,
 				},
@@ -237,6 +250,7 @@ func MapOpenAiToAmazonQ(req Models.ChatCompletionRequest, conversationID string,
 		if lastQHistoryItem.UserInputMessage.UserInputMessageContext.ToolResults != nil {
 			Output.ConversationState.CurrentMessage.UserInputMessage.UserInputMessageContext.ToolResults = lastQHistoryItem.UserInputMessage.UserInputMessageContext.ToolResults
 		}
+		Output.ConversationState.CurrentMessage.UserInputMessage.QImage = lastQHistoryItem.UserInputMessage.QImage
 	} else if lastQHistoryItem.AssistantResponseMessage != nil {
 		// current msg is blank
 		Output.ConversationState.CurrentMessage.UserInputMessage.Content = "-"
