@@ -11,6 +11,7 @@ type RefreshToken struct {
 	ClientId     string
 	ClientSecret string
 	AccessToken  AccessToken
+	Disabled     bool
 }
 
 // TokenRefreshRequest is the request body for refreshing access token

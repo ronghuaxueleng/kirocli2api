@@ -98,6 +98,9 @@ type APIAccountData struct {
 }
 
 func saveAPIAccountsToJSON(accounts []APIAccount) {
+	if accounts == nil {
+		accounts = []APIAccount{}
+	}
 	data, err := json.MarshalIndent(accounts, "", "  ")
 	if err != nil {
 		NormalLogger.Printf("Failed to marshal accounts to JSON: %v\n", err)
@@ -135,6 +138,27 @@ func removeAccountFromJSON(refreshToken string) {
 			return
 		}
 	}
+}
+
+func nextAvailableRefreshTokenIndexLocked() (int, bool) {
+	for idx := nextRefreshTokenIndex; idx < len(RefreshTokens); idx++ {
+		if RefreshTokens[idx].Disabled {
+			continue
+		}
+		return idx, true
+	}
+	return 0, false
+}
+
+func consumeRefreshTokenIndexLocked(idx int) {
+	if idx >= len(RefreshTokens) {
+		nextRefreshTokenIndex = len(RefreshTokens)
+		return
+	}
+	if idx < nextRefreshTokenIndex {
+		return
+	}
+	nextRefreshTokenIndex = idx + 1
 }
 
 func banAccountViaAPI(accountID int) {
@@ -226,6 +250,9 @@ func loadAccountsFromAPI(apiURL, apiToken string, count int) {
 	// Save all accounts to cache
 	var allAccounts []APIAccount
 	for _, rt := range RefreshTokens {
+		if rt.Disabled {
+			continue
+		}
 		allAccounts = append(allAccounts, APIAccount{
 			ID:           rt.ID,
 			RefreshToken: rt.Token,
@@ -248,13 +275,14 @@ func DisableToken(accessToken string, reason string) {
 		if RefreshTokens[idx].AccessToken.Token == accessToken {
 			NormalLogger.Printf("Disabling active token %d, reason: %s\n", idx, reason)
 			RefreshTokens[idx].AccessToken.ExpiresAt = 0
+			RefreshTokens[idx].Disabled = true
 			updateCSVEnabled(RefreshTokens[idx].Token)
 
-			if nextRefreshTokenIndex < len(RefreshTokens) {
+			if newIdx, ok := nextAvailableRefreshTokenIndexLocked(); ok {
 				var newToken Models.AccessToken
 				var err error
 				for attempt := 0; attempt < maxRefreshAttempt; attempt++ {
-					newToken, err = GetAccessTokenFromRefreshToken(RefreshTokens[nextRefreshTokenIndex])
+					newToken, err = GetAccessTokenFromRefreshToken(RefreshTokens[newIdx])
 					if err == nil {
 						break
 					}
@@ -263,11 +291,11 @@ func DisableToken(accessToken string, reason string) {
 				if err != nil {
 					ActiveTokens = append(ActiveTokens[:i], ActiveTokens[i+1:]...)
 				} else {
-					RefreshTokens[nextRefreshTokenIndex].AccessToken = newToken
-					ActiveTokens[i] = nextRefreshTokenIndex
-					NormalLogger.Printf("Rotated to new token from refresh token %d\n", nextRefreshTokenIndex)
+					RefreshTokens[newIdx].AccessToken = newToken
+					ActiveTokens[i] = newIdx
+					consumeRefreshTokenIndexLocked(newIdx)
+					NormalLogger.Printf("Rotated to new token from refresh token %d\n", newIdx)
 				}
-				nextRefreshTokenIndex++
 			} else {
 				go fetchAndAddNewToken()
 				ActiveTokens = append(ActiveTokens[:i], ActiveTokens[i+1:]...)
@@ -287,19 +315,24 @@ func fetchAndAddNewToken() {
 			return
 		}
 		loadAccountsFromAPI(apiURL, apiToken, 1)
-		if len(RefreshTokens) > nextRefreshTokenIndex {
-			tokenMutex.Lock()
-			defer tokenMutex.Unlock()
-			for attempt := 0; attempt < maxRefreshAttempt; attempt++ {
-				newToken, err := GetAccessTokenFromRefreshToken(RefreshTokens[nextRefreshTokenIndex])
-				if err == nil {
-					RefreshTokens[nextRefreshTokenIndex].AccessToken = newToken
-					ActiveTokens = append(ActiveTokens, nextRefreshTokenIndex)
-					NormalLogger.Printf("Added new token from API: %d\n", nextRefreshTokenIndex)
-					nextRefreshTokenIndex++
-					break
-				}
+		tokenMutex.Lock()
+		defer tokenMutex.Unlock()
+
+		newIdx, ok := nextAvailableRefreshTokenIndexLocked()
+		if !ok {
+			return
+		}
+
+		for attempt := 0; attempt < maxRefreshAttempt; attempt++ {
+			newToken, err := GetAccessTokenFromRefreshToken(RefreshTokens[newIdx])
+			if err == nil {
+				RefreshTokens[newIdx].AccessToken = newToken
+				ActiveTokens = append(ActiveTokens, newIdx)
+				consumeRefreshTokenIndexLocked(newIdx)
+				NormalLogger.Printf("Added new token from API: %d\n", newIdx)
+				return
 			}
+			NormalLogger.Printf("Failed to get new access token (attempt %d/%d): %v\n", attempt+1, maxRefreshAttempt, err)
 		}
 	}
 }
@@ -416,6 +449,9 @@ func GetBearer() (string, error) {
 	var validIndices []int
 
 	for _, idx := range ActiveTokens {
+		if RefreshTokens[idx].Disabled {
+			continue
+		}
 		if RefreshTokens[idx].AccessToken.ExpiresAt > now {
 			validIndices = append(validIndices, idx)
 		}
@@ -438,6 +474,9 @@ func StartTokenRefresher() {
 
 			tokenMutex.Lock()
 			for _, idx := range ActiveTokens {
+				if RefreshTokens[idx].Disabled {
+					continue
+				}
 				newToken, err := GetAccessTokenFromRefreshToken(RefreshTokens[idx])
 				if err != nil {
 					NormalLogger.Printf("Failed to refresh active token %d: %v\n", idx, err)
