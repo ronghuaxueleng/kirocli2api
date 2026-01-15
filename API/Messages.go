@@ -3,6 +3,7 @@ package API
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"kilocli2api/Models"
 	"kilocli2api/Utils"
@@ -75,6 +76,15 @@ func anthropicError(c *gin.Context, status int, errorType, message string) {
 	})
 }
 
+func hasWebSearchTool(req Models.AnthropicRequest) bool {
+	for _, tool := range req.Tools {
+		if tool.Name == "web_search" {
+			return true
+		}
+	}
+	return false
+}
+
 func Messages(c *gin.Context) {
 	bodyBytes, _ := io.ReadAll(c.Request.Body)
 	c.Request.Body = io.NopCloser(bytes.NewReader(bodyBytes))
@@ -92,6 +102,27 @@ func Messages(c *gin.Context) {
 		return
 	}
 
+	// Debug: Log all tool names
+	if len(req.Tools) > 0 {
+		toolNames := make([]string, len(req.Tools))
+		for i, tool := range req.Tools {
+			toolNames[i] = tool.Name
+		}
+		Utils.NormalLogger.Printf("Request has %d tools: %v", len(req.Tools), toolNames)
+	}
+
+	// Route to MCP if websearch detected
+	if hasWebSearchTool(req) {
+		Utils.NormalLogger.Printf("WebSearch tool detected, routing to MCP endpoint")
+		if req.Stream {
+			handleMCPStreamingRequest(c, req)
+		} else {
+			handleMCPNonStreamingRequest(c, req)
+		}
+		return
+	}
+
+	// Normal Q API flow
 	if req.Stream {
 		handleAnthropicStreamingRequest(c, req)
 	} else {
@@ -618,4 +649,294 @@ func anthropicToolInput(raw json.RawMessage) interface{} {
 	}
 
 	return trimmed
+}
+
+// MCP JSON-RPC structures
+type MCPRequest struct {
+	ID      string    `json:"id"`
+	JSONRPC string    `json:"jsonrpc"`
+	Method  string    `json:"method"`
+	Params  MCPParams `json:"params"`
+}
+
+type MCPParams struct {
+	Name      string       `json:"name"`
+	Arguments MCPArguments `json:"arguments"`
+}
+
+type MCPArguments struct {
+	Query string `json:"query"`
+}
+
+type MCPResponse struct {
+	ID      string     `json:"id"`
+	JSONRPC string     `json:"jsonrpc"`
+	Result  *MCPResult `json:"result,omitempty"`
+	Error   *MCPError  `json:"error,omitempty"`
+}
+
+type MCPResult struct {
+	Content []MCPContent `json:"content"`
+	IsError bool         `json:"isError"`
+}
+
+type MCPContent struct {
+	Type string `json:"type"`
+	Text string `json:"text"`
+}
+
+type MCPError struct {
+	Code    int    `json:"code"`
+	Message string `json:"message"`
+}
+
+type WebSearchResults struct {
+	Results      []WebSearchResult `json:"results"`
+	TotalResults int               `json:"totalResults,omitempty"`
+	Query        string            `json:"query,omitempty"`
+}
+
+type WebSearchResult struct {
+	Title       string `json:"title"`
+	URL         string `json:"url"`
+	Snippet     string `json:"snippet,omitempty"`
+	Domain      string `json:"domain,omitempty"`
+	PublishedAt int64  `json:"published_date,omitempty"`
+}
+
+func extractSearchQuery(req Models.AnthropicRequest) string {
+	if len(req.Messages) == 0 {
+		return ""
+	}
+	firstMsg := req.Messages[0]
+	if firstMsg.Content.IsString {
+		text := firstMsg.Content.String
+		prefix := "Perform a web search for the query: "
+		if strings.HasPrefix(text, prefix) {
+			return strings.TrimSpace(text[len(prefix):])
+		}
+		return text
+	}
+	if len(firstMsg.Content.Blocks) > 0 {
+		text := firstMsg.Content.Blocks[0].Text
+		prefix := "Perform a web search for the query: "
+		if strings.HasPrefix(text, prefix) {
+			return strings.TrimSpace(text[len(prefix):])
+		}
+		return text
+	}
+	return ""
+}
+
+func handleMCPNonStreamingRequest(c *gin.Context, req Models.AnthropicRequest) {
+	handleMCPStreamingRequest(c, req)
+}
+
+func handleMCPStreamingRequest(c *gin.Context, req Models.AnthropicRequest) {
+	inputTokens := estimateInputTokens(req)
+	query := extractSearchQuery(req)
+	if query == "" {
+		anthropicError(c, http.StatusBadRequest, "invalid_request_error", "Cannot extract search query")
+		return
+	}
+
+	// Get max_uses from tool
+	maxUses := 5 // default
+	for _, tool := range req.Tools {
+		if tool.Name == "web_search" && tool.MaxUses > 0 {
+			maxUses = tool.MaxUses
+			break
+		}
+	}
+
+	mcpReq := MCPRequest{
+		ID:      fmt.Sprintf("web_search_tooluse_%s_%d_%s", uuid.NewString()[:22], time.Now().UnixMilli(), uuid.NewString()[:8]),
+		JSONRPC: "2.0",
+		Method:  "tools/call",
+		Params: MCPParams{
+			Name:      "web_search",
+			Arguments: MCPArguments{Query: query},
+		},
+	}
+
+	jsonBytes, _ := json.Marshal(mcpReq)
+
+	client := &http.Client{
+		Transport: Utils.GetProxyTransport(),
+		Timeout:   5 * time.Minute,
+	}
+
+	bearer, err := Utils.GetBearer()
+	if err != nil {
+		anthropicError(c, http.StatusInternalServerError, "api_error", "Failed to get bearer token")
+		return
+	}
+
+	mcpURL := "https://q.us-east-1.amazonaws.com/mcp"
+	httpReq, _ := http.NewRequest("POST", mcpURL, bytes.NewReader(jsonBytes))
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Authorization", "Bearer "+bearer)
+
+	resp, err := client.Do(httpReq)
+	if err != nil {
+		Utils.ErrorLogger.Printf("MCP request failed: %v", err)
+		anthropicError(c, http.StatusBadGateway, "api_error", "MCP service unavailable")
+		return
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+
+	var mcpResp MCPResponse
+	if resp.StatusCode != http.StatusOK || json.Unmarshal(body, &mcpResp) != nil || mcpResp.Error != nil {
+		anthropicError(c, http.StatusBadGateway, "api_error", "MCP request failed")
+		return
+	}
+
+	// Parse search results
+	var searchResults *WebSearchResults
+	if mcpResp.Result != nil && len(mcpResp.Result.Content) > 0 {
+		for _, content := range mcpResp.Result.Content {
+			if content.Type == "text" {
+				var results WebSearchResults
+				if json.Unmarshal([]byte(content.Text), &results) == nil {
+					searchResults = &results
+					break
+				}
+			}
+		}
+	}
+
+	c.Header("Content-Type", "text/event-stream")
+	c.Header("Cache-Control", "no-cache")
+	c.Header("Connection", "keep-alive")
+
+	toolUseID := "srvtoolu_" + strings.ReplaceAll(uuid.NewString(), "-", "")[:32]
+	msgID := "msg_" + strings.ReplaceAll(uuid.NewString(), "-", "")[:24]
+
+	c.SSEvent("message_start", map[string]interface{}{
+		"type": "message_start",
+		"message": map[string]interface{}{
+			"id":            msgID,
+			"type":          "message",
+			"role":          "assistant",
+			"model":         req.Model,
+			"content":       []interface{}{},
+			"stop_reason":   nil,
+			"stop_sequence": nil,
+			"usage": map[string]int{
+				"input_tokens":  inputTokens,
+				"output_tokens": 0,
+			},
+		},
+	})
+
+	c.SSEvent("content_block_start", map[string]interface{}{
+		"type":  "content_block_start",
+		"index": 0,
+		"content_block": map[string]interface{}{
+			"id":    toolUseID,
+			"type":  "server_tool_use",
+			"name":  "web_search",
+			"input": map[string]interface{}{},
+		},
+	})
+
+	inputJSON, _ := json.Marshal(map[string]string{"query": query})
+	c.SSEvent("content_block_delta", map[string]interface{}{
+		"type":  "content_block_delta",
+		"index": 0,
+		"delta": map[string]interface{}{
+			"type":         "input_json_delta",
+			"partial_json": string(inputJSON),
+		},
+	})
+
+	c.SSEvent("content_block_stop", map[string]interface{}{"type": "content_block_stop", "index": 0})
+
+	// Build search result content blocks
+	searchContent := []interface{}{}
+	if searchResults != nil {
+		limit := len(searchResults.Results)
+		if maxUses > 0 && maxUses < limit {
+			limit = maxUses
+		}
+		for i := 0; i < limit; i++ {
+			result := searchResults.Results[i]
+			searchContent = append(searchContent, map[string]interface{}{
+				"type":              "web_search_result",
+				"title":             result.Title,
+				"url":               result.URL,
+				"encrypted_content": result.Snippet,
+				"page_age":          nil,
+			})
+		}
+	}
+
+	c.SSEvent("content_block_start", map[string]interface{}{
+		"type":  "content_block_start",
+		"index": 1,
+		"content_block": map[string]interface{}{
+			"type":        "web_search_tool_result",
+			"tool_use_id": toolUseID,
+			"content":     searchContent,
+		},
+	})
+
+	c.SSEvent("content_block_stop", map[string]interface{}{"type": "content_block_stop", "index": 1})
+
+	// Generate summary with results
+	summary := fmt.Sprintf("Here are the search results for \"%s\":\n\n", query)
+	if searchResults != nil && len(searchResults.Results) > 0 {
+		limit := len(searchResults.Results)
+		if maxUses > 0 && maxUses < limit {
+			limit = maxUses
+		}
+		for i := 0; i < limit; i++ {
+			result := searchResults.Results[i]
+			summary += fmt.Sprintf("%d. **%s**\n", i+1, result.Title)
+			if result.Snippet != "" {
+				snippet := result.Snippet
+				if len(snippet) > 200 {
+					snippet = snippet[:200] + "..."
+				}
+				summary += fmt.Sprintf("   %s\n", snippet)
+			}
+			summary += fmt.Sprintf("   Source: %s\n\n", result.URL)
+		}
+	} else {
+		summary += "No results found.\n"
+	}
+
+	c.SSEvent("content_block_start", map[string]interface{}{
+		"type":  "content_block_start",
+		"index": 2,
+		"content_block": map[string]interface{}{
+			"type": "text",
+			"text": "",
+		},
+	})
+
+	c.SSEvent("content_block_delta", map[string]interface{}{
+		"type":  "content_block_delta",
+		"index": 2,
+		"delta": map[string]interface{}{
+			"type": "text_delta",
+			"text": summary,
+		},
+	})
+
+	c.SSEvent("content_block_stop", map[string]interface{}{"type": "content_block_stop", "index": 2})
+
+	outputTokens := countTokens(summary)
+	c.SSEvent("message_delta", map[string]interface{}{
+		"type": "message_delta",
+		"delta": map[string]interface{}{
+			"stop_reason":   "end_turn",
+			"stop_sequence": nil,
+		},
+		"usage": map[string]int{"output_tokens": outputTokens},
+	})
+
+	c.SSEvent("message_stop", map[string]interface{}{"type": "message_stop"})
 }

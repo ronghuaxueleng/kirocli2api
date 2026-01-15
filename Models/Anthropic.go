@@ -161,6 +161,7 @@ type AnthropicTool struct {
 	Name        string                 `json:"name"`
 	Description string                 `json:"description"`
 	InputSchema map[string]interface{} `json:"input_schema"`
+	MaxUses     int                    `json:"max_uses,omitempty"`
 }
 
 type AnthropicResponse struct {
