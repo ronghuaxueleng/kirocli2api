@@ -102,15 +102,6 @@ func Messages(c *gin.Context) {
 		return
 	}
 
-	// Debug: Log all tool names
-	if len(req.Tools) > 0 {
-		toolNames := make([]string, len(req.Tools))
-		for i, tool := range req.Tools {
-			toolNames[i] = tool.Name
-		}
-		Utils.NormalLogger.Printf("Request has %d tools: %v", len(req.Tools), toolNames)
-	}
-
 	// Route to MCP if websearch detected
 	if hasWebSearchTool(req) {
 		Utils.NormalLogger.Printf("WebSearch tool detected, routing to MCP endpoint")
