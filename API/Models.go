@@ -38,10 +38,10 @@ func fetchQModels() (*Models.QModelsResponse, error) {
 	qUrl := "https://q.us-east-1.amazonaws.com?origin=KIRO_CLI"
 	httpReq, _ := http.NewRequest("POST", qUrl, bytes.NewReader(jsonBytes))
 
-	httpReq.Header.Set("user-agent", "aws-sdk-rust/1.3.10 ua/2.1 api/codewhispererruntime/0.1.12842 os/macos lang/rust/1.88.0 md/appVersion-1.21.0 app/AmazonQ-For-CLI")
+	httpReq.Header.Set("user-agent", "aws-sdk-rust/1.3.10 ua/2.1 api/codewhispererstreaming/0.1.12842 os/macos lang/rust/1.88.0 md/appVersion-1.23.1 app/AmazonQ-For-CLI")
 	httpReq.Header.Set("Content-Type", "application/x-amz-json-1.0")
 	httpReq.Header.Set("x-amz-target", "AmazonCodeWhispererService.ListAvailableModels")
-	httpReq.Header.Set("x-amz-user-agent", "aws-sdk-rust/1.3.10 ua/2.1 api/codewhispererruntime/0.1.12842 os/macos lang/rust/1.88.0 m/F,C app/AmazonQ-For-CLI")
+	httpReq.Header.Set("x-amz-user-agent", "aws-sdk-rust/1.3.10 ua/2.1 api/codewhispererstreaming/0.1.12842 os/macos lang/rust/1.88.0 m/F app/AmazonQ-For-CLI")
 	httpReq.Header.Set("x-amzn-codewhisperer-optout", "true")
 	httpReq.Header.Set("amz-sdk-request", "attempt=1; max=3")
 	httpReq.Header.Set("amz-sdk-invocation-id", uuid.NewString())

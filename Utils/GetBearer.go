@@ -513,8 +513,8 @@ func GetAccessTokenFromRefreshToken(refreshToken Models.RefreshToken) (Models.Ac
 
 	// Set headers to match the curl command
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("user-agent", "aws-sdk-rust/1.3.9 os/macos lang/rust/1.87.0")
-	req.Header.Set("x-amz-user-agent", "aws-sdk-rust/1.3.9 ua/2.1 api/ssooidc/1.89.0 os/macos lang/rust/1.87.0 m/E app/AmazonQ-For-KIRO_CLI")
+	req.Header.Set("user-agent", "aws-sdk-rust/1.3.10 os/macos lang/rust/1.88.0")
+	req.Header.Set("x-amz-user-agent", "aws-sdk-rust/1.3.10 ua/2.1 api/ssooidc/1.89.0 os/macos lang/rust/1.88.0 m/E app/AmazonQ-For-KIRO_CLI")
 	req.Header.Set("amz-sdk-request", "attempt=1; max=3")
 	req.Header.Set("amz-sdk-invocation-id", uuid.New().String())
 	req.Header.Set("accept", "*/*")

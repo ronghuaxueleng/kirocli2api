@@ -149,7 +149,7 @@ func handleAnthropicNonStreamingRequest(c *gin.Context, req Models.AnthropicRequ
 
 	for attempt := 0; attempt < 3; attempt++ {
 		httpReq, _ := http.NewRequest("POST", qUrl, bytes.NewReader(jsonBytes))
-		httpReq.Header.Set("user-agent", "aws-sdk-rust/1.3.10 ua/2.1 api/codewhispererstreaming/0.1.12842 os/macos lang/rust/1.88.0 md/appVersion-1.21.0 app/AmazonQ-For-CLI")
+		httpReq.Header.Set("user-agent", "aws-sdk-rust/1.3.10 ua/2.1 api/codewhispererstreaming/0.1.12842 os/macos lang/rust/1.88.0 md/appVersion-1.23.1 app/AmazonQ-For-CLI")
 		httpReq.Header.Set("accept", "*/*")
 		httpReq.Header.Set("accept-encoding", "gzip")
 		httpReq.Header.Set("content-type", "application/x-amz-json-1.0")
@@ -247,7 +247,7 @@ func handleAnthropicStreamingRequest(c *gin.Context, req Models.AnthropicRequest
 	var bearer string
 	for attempt := 0; attempt < 3; attempt++ {
 		httpReq, _ := http.NewRequest("POST", qUrl, bytes.NewReader(jsonBytes))
-		httpReq.Header.Set("user-agent", "aws-sdk-rust/1.3.10 ua/2.1 api/codewhispererstreaming/0.1.12842 os/macos lang/rust/1.88.0 md/appVersion-1.21.0 app/AmazonQ-For-CLI")
+		httpReq.Header.Set("user-agent", "aws-sdk-rust/1.3.10 ua/2.1 api/codewhispererstreaming/0.1.12842 os/macos lang/rust/1.88.0 md/appVersion-1.23.1 app/AmazonQ-For-CLI")
 		httpReq.Header.Set("accept", "*/*")
 		httpReq.Header.Set("accept-encoding", "gzip")
 		httpReq.Header.Set("content-type", "application/x-amz-json-1.0")
