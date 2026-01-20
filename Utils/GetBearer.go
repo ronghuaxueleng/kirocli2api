@@ -505,7 +505,7 @@ func GetAccessTokenFromRefreshToken(refreshToken Models.RefreshToken) (Models.Ac
 	}
 
 	// Create HTTP request
-	qUrl := "https://oidc.us-east-1.amazonaws.com/token"
+	qUrl := os.Getenv("OIDC_URL")
 	req, err := http.NewRequest("POST", qUrl, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return Models.AccessToken{}, fmt.Errorf("failed to create request: %w", err)
